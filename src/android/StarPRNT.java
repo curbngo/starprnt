@@ -3,7 +3,6 @@ package starprnt.cordova;
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CallbackContext;
 
-
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
@@ -12,7 +11,7 @@ import java.util.Locale;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-
+import java.util.HashMap;
 
 import com.starmicronics.stario.PortInfo;
 import com.starmicronics.stario.StarIOPort;
@@ -26,7 +25,6 @@ import com.starmicronics.starioextension.ICommandBuilder.CutPaperAction;
 import com.starmicronics.starioextension.ICommandBuilder.CodePageType;
 import com.starmicronics.starioextension.StarIoExtManager;
 import com.starmicronics.starioextension.StarIoExtManagerListener;
-
 
 import org.apache.cordova.PluginResult;
 import org.json.JSONArray;
@@ -51,18 +49,15 @@ import android.text.TextPaint;
 import android.util.Log;
 import android.util.Base64;
 
-
-
 /**
  * This class echoes a string called from JavaScript.
  */
 public class StarPRNT extends CordovaPlugin {
 
-
     private CallbackContext _callbackContext = null;
     String strInterface;
     private StarIoExtManager starIoExtManager;
-
+    private Map<String, StarIOPort> printerPorts = new HashMap<String, StarIOPort>();
 
     /**
      * Executes the request and returns PluginResult.
@@ -147,9 +142,9 @@ public class StarPRNT extends CordovaPlugin {
         return false;
     }
 
-
     public void checkStatus(String portName, String portSettings, CallbackContext callbackContext) {
-
+        Log.d("JOE_TESTING", "checkStatus");
+        
         final Context context = this.cordova.getActivity();
         final CallbackContext _callbackContext = callbackContext;
 
@@ -163,7 +158,7 @@ public class StarPRNT extends CordovaPlugin {
                         StarIOPort port = null;
                         try {
 
-                            port = StarIOPort.getPort(_portName, _portSettings, 10000, context);
+                            port = getPort(_portName, _portSettings, context);
 
                             // A sleep is used to get time for the socket to completely open
                             try {
@@ -193,23 +188,24 @@ public class StarPRNT extends CordovaPlugin {
 
                         } catch (StarIOPortException e) {
                             _callbackContext.error("Failed to connect to printer :" + e.getMessage());
-                        } finally {
-
-                            if (port != null) {
-                                try {
-
-                                    StarIOPort.releasePort(port);
-                                } catch (StarIOPortException e) {
-                                    _callbackContext.error("Failed to connect to printer" + e.getMessage());
-                                }
-                            }
-
                         }
+                        
+                        // finally {
+
+                        //     if (port != null) {
+                        //         try {
+
+                        //             StarIOPort.releasePort(port);
+                        //         } catch (StarIOPortException e) {
+                        //             _callbackContext.error("Failed to connect to printer" + e.getMessage());
+                        //         }
+                        //     }
+
+                        // }
 
                     }
                 });
     }
-
 
     private void portDiscovery(String strInterface, CallbackContext callbackContext) {
 
@@ -234,18 +230,14 @@ public class StarPRNT extends CordovaPlugin {
 
                         } catch (StarIOPortException exception) {
                             _callbackContext.error(exception.getMessage());
-
                         } catch (JSONException e) {
 
                         } finally {
-
-                            Log.d("Discovered ports", result.toString());
                             _callbackContext.success(result);
                         }
                     }
                 });
     }
-
 
     private JSONArray getPortDiscovery(String interfaceName) throws StarIOPortException, JSONException {
         List<PortInfo> BTPortList;
@@ -325,7 +317,7 @@ public class StarPRNT extends CordovaPlugin {
         else if (emulation.equals("EscPosMobile")) return Emulation.EscPosMobile;
         else if (emulation.equals("StarDotImpact")) return Emulation.StarDotImpact;
         else return Emulation.StarLine;
-    };
+    }
 
     private String getPortSettingsOption(String portName, String emulation) { // generate the portsettings depending on the emulation type
 
@@ -365,10 +357,8 @@ public class StarPRNT extends CordovaPlugin {
                 //Do nothing
             }
         });
-
-
-
     }
+
     private void connect(String portName, String portSettings, Boolean hasBarcodeReader, CallbackContext callbackContext) {
 
         final Context context = this.cordova.getActivity();
@@ -391,12 +381,12 @@ public class StarPRNT extends CordovaPlugin {
         PluginResult result = new  PluginResult(PluginResult.Status.NO_RESULT);
         result.setKeepCallback(true); // Keep callback
     }
+
     private void disconnect(CallbackContext callbackContext) {
 
         final Context context = this.cordova.getActivity();
 
         final CallbackContext _callbackContext = callbackContext;
-
 
         cordova.getThreadPool()
                 .execute(new Runnable() {
@@ -423,8 +413,6 @@ public class StarPRNT extends CordovaPlugin {
                     }
                 });
     }
-
-
 
     private void printRawText(final String portName, String portSettings, Emulation emulation, String printObj, CallbackContext callbackContext) throws JSONException {
 
@@ -470,6 +458,7 @@ public class StarPRNT extends CordovaPlugin {
                     }
                 });
     }
+
     private void printRasterReceipt(String portName, String portSettings, Emulation emulation, String printObj, CallbackContext callbackContext) throws JSONException {
 
         final Context context = this.cordova.getActivity();
@@ -522,6 +511,7 @@ public class StarPRNT extends CordovaPlugin {
                     }
                 });
     }
+
     private void printBase64Image(String portName, String portSettings, Emulation emulation, String printObj, CallbackContext callbackContext) throws JSONException {
 
         final Context context = this.cordova.getActivity();
@@ -568,6 +558,7 @@ public class StarPRNT extends CordovaPlugin {
                     }
                 });
     }
+
     private void print(String portName, String portSettings, Emulation emulation, JSONArray printCommands, CallbackContext callbackContext) throws JSONException {
 
         final Context context = this.cordova.getActivity();
@@ -659,6 +650,7 @@ public class StarPRNT extends CordovaPlugin {
                     }
                 });
     }
+
     private void openCashDrawer(String portName, String portSettings, Emulation emulation, CallbackContext callbackContext) throws JSONException {
         final Context context = this.cordova.getActivity();
         final String _portName = portName;
@@ -690,110 +682,66 @@ public class StarPRNT extends CordovaPlugin {
 
                     }
                 });
-
-
     }
 
-    private boolean sendCommand(byte[] commands, StarIOPort port, CallbackContext callbackContext) {
-
-        try {
-			/*
-			 * using StarIOPort3.1.jar (support USB Port) Android OS Version: upper 2.2
-			 */
-            try {
-                Thread.sleep(200);
-            } catch (InterruptedException e) {
-            }
-            if(port == null){ //Not connected or port closed
-                callbackContext.error("Unable to Open Port, Please Connect to the printer before sending commands");
-                return false;
-            }
-
-			/*
-			 * Using Begin / End Checked Block method When sending large amounts of raster data,
-			 * adjust the value in the timeout in the "StarIOPort.getPort" in order to prevent
-			 * "timeout" of the "endCheckedBlock method" while a printing.
-			 *
-			 * If receipt print is success but timeout error occurs(Show message which is "There
-			 * was no response of the printer within the timeout period." ), need to change value
-			 * of timeout more longer in "StarIOPort.getPort" method.
-			 * (e.g.) 10000 -> 30000
-			 */
-            StarPrinterStatus status;
-
-            status = port.beginCheckedBlock();
-
-            if (status.offline) {
-                //sendEvent("printerOffline", null);
-                throw new StarIOPortException("A printer is offline");
-                //callbackContext.error("The printer is offline");
-            }
-
-            port.writePort(commands, 0, commands.length);
-
-            port.setEndCheckedBlockTimeoutMillis(30000);// Change the timeout time of endCheckedBlock method.
-
-            status = port.endCheckedBlock();
-
-            if (status.coverOpen) {
-                callbackContext.error("Cover open");
-                //sendEvent("printerCoverOpen", null);
-                return false;
-            } else if (status.receiptPaperEmpty) {
-                callbackContext.error("Empty paper");
-                //sendEvent("printerPaperEmpty", null);
-                return false;
-            } else if (status.offline) {
-                callbackContext.error("Printer offline");
-                //sendEvent("printerOffline", null);
-                return false;
-            }
-            callbackContext.success("Success!");
-
-        } catch (StarIOPortException e) {
-            //sendEvent("printerImpossible", e.getMessage());
-            callbackContext.error(e.getMessage());
-            return false;
-        } finally {
-            return true;
-        }
-    }
+    /**
+     * Send command with port name / settings string
+     * Gets port and then sends command
+     */
     private boolean sendCommand(Context context, String portName, String portSettings, byte[] commands, CallbackContext callbackContext) {
+        Log.d("JOE_TESTING", "sendCommand initial call");
 
         StarIOPort port = null;
         try {
-			/*
-			 * using StarIOPort3.1.jar (support USB Port) Android OS Version: upper 2.2
-			 */
-                port = StarIOPort.getPort(portName, portSettings, 10000, context);
+            port = getPort(portName, portSettings, context);
+
+            // this delay is needed to make sure the port is open
+            // ... no really this is the best option we have
+            // ... it'll retry if it fails the first time
+            // ... but it ALWAYS fails the first time without this delay
             try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-            }
+                Thread.sleep(500);
+            } catch (InterruptedException e) { }
 
-			/*
-			 * Using Begin / End Checked Block method When sending large amounts of raster data,
-			 * adjust the value in the timeout in the "StarIOPort.getPort" in order to prevent
-			 * "timeout" of the "endCheckedBlock method" while a printing.
-			 *
-			 * If receipt print is success but timeout error occurs(Show message which is "There
-			 * was no response of the printer within the timeout period." ), need to change value
-			 * of timeout more longer in "StarIOPort.getPort" method.
-			 * (e.g.) 10000 -> 30000
-			 */
+            return sendCommand(commands, port, callbackContext);
+        } catch (StarIOPortException e) {
+            callbackContext.error(e.getMessage());
+        }
+        return false;
+    }    
+
+    /**
+     * Send command with existing port
+     */
+    private boolean sendCommand(byte[] commands, StarIOPort port, CallbackContext callbackContext) {
+        return sendCommand(commands, port, callbackContext, 0);
+    }
+
+    private boolean sendCommand(byte[] commands, StarIOPort port, CallbackContext callbackContext, int retries) {
+        Log.d("JOE_TESTING", "sendCommand - try: " + retries);
+        if(port == null){ //Not connected or port closed
+            callbackContext.error("Unable to Open Port, Please Connect to the printer before sending commands");
+            return false;
+        }
+
+        try {
+            Log.d("JOE_TESTING", "sendCommand - try: " + retries + " - before beginCheckedBlock");
             StarPrinterStatus status = port.beginCheckedBlock();
-
+            Log.d("JOE_TESTING", "sendCommand - try: " + retries + " - after beginCheckedBlock");
+            
             if (status.offline) {
-                //throw new StarIOPortException("A printer is offline");
-                callbackContext.error("The printer is offline");
-                return false;
+                throw new StarIOPortException("A printer is offline");
             }
-
+            
+            Log.d("JOE_TESTING", "sendCommand - try: " + retries + " - before write");
             port.writePort(commands, 0, commands.length);
-
-
-            port.setEndCheckedBlockTimeoutMillis(30000);// Change the timeout time of endCheckedBlock method.
+            Log.d("JOE_TESTING", "sendCommand - try: " + retries + " - after write");
+            
+            port.setEndCheckedBlockTimeoutMillis(5000);
+            
+            Log.d("JOE_TESTING", "sendCommand - try: " + retries + " - before endCheckedBlock");
             status = port.endCheckedBlock();
+            Log.d("JOE_TESTING", "sendCommand - try: " + retries + " - after endCheckedBlock");
 
             if (status.coverOpen) {
                 callbackContext.error("Cover open");
@@ -806,17 +754,18 @@ public class StarPRNT extends CordovaPlugin {
                 return false;
             }
             callbackContext.success("Success!");
-
-        } catch (StarIOPortException e) {
-            callbackContext.error(e.getMessage());
-        } finally {
-            if (port != null) {
-                try {
-                    StarIOPort.releasePort(port);
-                } catch (StarIOPortException e) {
-                }
-            }
             return true;
+        } catch (Exception e) {
+            retries++;
+            if(retries < 5) {
+                try {
+                    Thread.sleep(200);
+                } catch (InterruptedException e2) { }                
+                return sendCommand(commands, port, callbackContext, retries);
+            } else {
+                callbackContext.error(e.getMessage());
+                return false;
+            }
         }
     }
 
@@ -932,12 +881,49 @@ public class StarPRNT extends CordovaPlugin {
                     }
                 }
             }
-
         } catch (JSONException e) {
 
         }
 
-    };
+    }
+
+    private StarIOPort getPort(String portName, String portSettings, Context context) throws StarIOPortException {
+        return getPort(portName, portSettings, context, 0);
+    }
+
+    private StarIOPort getPort(String portName, String portSettings, Context context, int retries) throws StarIOPortException {
+        Log.d("JOE_TESTING", "getPort - try: " + retries);
+        StarIOPort port = printerPorts.get(portName);
+        
+        if(port == null) {
+            try {
+                /*
+                 * using StarIOPort3.1.jar (support USB Port) Android OS Version: upper 2.2
+			     */
+                Log.d("JOE_TESTING", "getPort - try: " + retries + " - before StarIOPort.getPort");
+                port = StarIOPort.getPort(portName, portSettings, 1000, context);
+                Log.d("JOE_TESTING", "getPort - try: " + retries + " - after StarIOPort.getPort");
+                printerPorts.put(portName, port);
+                return port;
+            } catch (Exception e) {
+                retries++;
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e1) {
+                    e1.printStackTrace();
+                }
+
+                if(retries < 5) {
+                    return getPort(portName, portSettings, context, retries);
+                } else {
+                    throw new StarIOPortException("Couldn't create port");
+                }                
+            }
+        } else {
+            Log.d("JOE_TESTING", "getPort - try: " + retries + " - got cached port");
+            return port;
+        }
+    }
 
     //ICommandBuilder Constant Functions
     private ICommandBuilder.InternationalType getInternational(String international){
@@ -1011,16 +997,19 @@ public class StarPRNT extends CordovaPlugin {
         else if(cutPaperAction.equals("PartialCutWithFeed")) return CutPaperAction.PartialCutWithFeed;
         else return CutPaperAction.PartialCutWithFeed;
     }
+
     private ICommandBuilder.PeripheralChannel getPeripheralChannel(int peripheralChannel){
         if(peripheralChannel == 1) return ICommandBuilder.PeripheralChannel.No1;
         else if(peripheralChannel == 2) return ICommandBuilder.PeripheralChannel.No2;
         else return ICommandBuilder.PeripheralChannel.No1;
     }
+
     private ICommandBuilder.QrCodeModel getQrCodeModel (String qrCodeModel){
         if(qrCodeModel.equals("No1")) return ICommandBuilder.QrCodeModel.No1;
         else if(qrCodeModel.equals("No2")) return ICommandBuilder.QrCodeModel.No2;
         else return ICommandBuilder.QrCodeModel.No1;
     }
+
     private ICommandBuilder.QrCodeLevel getQrCodeLevel (String qrCodeLevel){
         if(qrCodeLevel.equals("H")) return ICommandBuilder.QrCodeLevel.H;
         else if(qrCodeLevel.equals("L")) return ICommandBuilder.QrCodeLevel.L;
@@ -1028,6 +1017,7 @@ public class StarPRNT extends CordovaPlugin {
         else if(qrCodeLevel.equals("Q")) return ICommandBuilder.QrCodeLevel.Q;
         else return ICommandBuilder.QrCodeLevel.H;
     }
+
     private ICommandBuilder.BitmapConverterRotation getConverterRotation (String converterRotation){
         if(converterRotation.equals("Normal")) return ICommandBuilder.BitmapConverterRotation.Normal;
         else if(converterRotation.equals("Left90")) return ICommandBuilder.BitmapConverterRotation.Left90;
@@ -1035,12 +1025,14 @@ public class StarPRNT extends CordovaPlugin {
         else if(converterRotation.equals("Rotate180")) return ICommandBuilder.BitmapConverterRotation.Rotate180;
         else return ICommandBuilder.BitmapConverterRotation.Normal;
     }
+
     private ICommandBuilder.BlackMarkType getBlackMarkType(String blackMarkType){
         if(blackMarkType.equals("Valid")) return ICommandBuilder.BlackMarkType.Valid;
         else if(blackMarkType.equals("Invalid")) return ICommandBuilder.BlackMarkType.Invalid;
         else if(blackMarkType.equals("ValidWithDetection")) return ICommandBuilder.BlackMarkType.ValidWithDetection;
         else return ICommandBuilder.BlackMarkType.Valid;
     }
+
     private ICommandBuilder.CodePageType getCodePageType(String codePageType){
         if (codePageType.equals("CP437")) return CodePageType.CP437;
         else if (codePageType.equals("CP737")) return CodePageType.CP737;
@@ -1085,8 +1077,7 @@ public class StarPRNT extends CordovaPlugin {
         else return CodePageType.CP998;
     }
 
-
-    //Helper functions
+    // Helper functions
 
     private Charset getEncoding(String encoding){
 
@@ -1147,7 +1138,6 @@ public class StarPRNT extends CordovaPlugin {
         return byteBuffer;
     }
 
-
     private byte[] convertFromListByteArrayTobyteArray(List<byte[]> ByteArray) {
         int dataLength = 0;
         for (int i = 0; i < ByteArray.size(); i++) {
@@ -1181,6 +1171,7 @@ public class StarPRNT extends CordovaPlugin {
             this._callbackContext.sendPluginResult(result);
         }
     }
+
     private StarIoExtManagerListener starIoExtManagerListener = new StarIoExtManagerListener() {
         @Override
         public void onPrinterImpossible() {
@@ -1279,6 +1270,4 @@ public class StarPRNT extends CordovaPlugin {
 
         return bitmap;
     }
-
-
 }
