@@ -4,6 +4,12 @@ module.exports = {
 
     //Android and iOS functions
 
+    releasePort: function(port, success, error) {
+        exec(success, error, "StarPRNT", "releasePort", [port]);
+    },
+    releaseAllPorts: function(success, error) {
+        exec(success, error, "StarPRNT", "releaseAllPorts", []);
+    },
     portDiscovery: function(type, success, error) {
         exec(success, error, "StarPRNT", "portDiscovery", [type]);
     },
@@ -26,7 +32,9 @@ module.exports = {
     openCashDrawer: function (port, emulation, success, error) {
         exec(success, error, "StarPRNT", "openCashDrawer", [port, emulation]);
     },
-
+    reconnectPort: function(port, emulation, success, error){
+        exec(success, error, "StarPRNT", "reconnectPort", [port, emulation]);
+    },
     print: function(port, emulation, printCommands, success, error){ //exposes all methods for the CommandBuilderInterface / ISCBBuilderInterface
         exec(success, error, "StarPRNT", "print", [port, emulation, printCommands]);
     },
