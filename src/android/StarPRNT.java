@@ -85,12 +85,6 @@ public class StarPRNT extends CordovaPlugin {
         super.onDestroy();
     }
 
-    @Override
-    public void onReset() {
-        cleanup();
-        super.onReset();
-    }
-
     private void cleanup() {
         // Clear bitmap cache
         for (Bitmap bitmap : bitmapCache.values()) {
