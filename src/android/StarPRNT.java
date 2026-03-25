@@ -1142,7 +1142,8 @@ public class StarPRNT extends CordovaPlugin {
                 } else if (command.has("appendQrCode")){
                     ICommandBuilder.QrCodeModel qrCodeModel =  (command.has("QrCodeModel") ? getQrCodeModel(command.getString("QrCodeModel")): getQrCodeModel("No2"));
                     ICommandBuilder.QrCodeLevel qrCodeLevel = (command.has("QrCodeLevel") ? getQrCodeLevel(command.getString("QrCodeLevel")): getQrCodeLevel("H"));
-                    int cell = (command.has("cell") ? command.getInt("cell"): 4);
+                    int cell = command.has("cell") ? command.getInt("cell") :
+                               command.has("cellSize") ? command.getInt("cellSize") : 4;
                     if(command.has("absolutePosition")){
                         int position =  command.getInt("absolutePosition");
                         builder.appendQrCodeWithAbsolutePosition(command.getString("appendQrCode").getBytes(encoding), qrCodeModel, qrCodeLevel, cell, position);
@@ -1154,6 +1155,21 @@ public class StarPRNT extends CordovaPlugin {
                     String uriString = command.getString("appendBitmap");
                     if (uriString != null) {
                         getAndCacheImage(uriString, command, builder, context);
+                    }
+                } else if (command.has("appendBitmapBase64")) {
+                    String base64Image = command.getString("appendBitmapBase64");
+                    if (base64Image != null && !base64Image.isEmpty()) {
+                        try {
+                            byte[] decoded = Base64.decode(base64Image, Base64.DEFAULT);
+                            Bitmap bitmap = BitmapFactory.decodeByteArray(decoded, 0, decoded.length);
+                            if (bitmap != null) {
+                                processBitmap(bitmap, command, builder);
+                            } else {
+                                Log.e(TAG, "appendBitmapBase64: failed to decode bitmap");
+                            }
+                        } catch (IllegalArgumentException e) {
+                            Log.e(TAG, "appendBitmapBase64 decode error: " + e.getMessage());
+                        }
                     }
                 } else if (command.has("text")){
                     Bitmap image = createBitmapFromTextField(command);
