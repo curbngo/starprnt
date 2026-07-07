@@ -87,7 +87,24 @@ public class StarPRNT extends CordovaPlugin {
     private String _action = null;
     private JSONArray _args = null;
 
+    private static class PendingCall {
+        final String action;
+        final JSONArray args;
+        final CallbackContext callbackContext;
+
+        PendingCall(String action, JSONArray args, CallbackContext callbackContext) {
+            this.action = action;
+            this.args = args;
+            this.callbackContext = callbackContext;
+        }
+    }
+
+    // Calls received while the Bluetooth permission prompt is up; replayed on grant
+    private final ArrayList<PendingCall> pendingPermissionCalls = new ArrayList<PendingCall>();
+    private boolean permissionRequestInFlight = false;
+
     private StarIoExtManager starIoExtManager;
+    private String persistentPortName = null;
     private HashMap<String, Bitmap> bitmapCache = new HashMap<>();
 
     private String INTENT_ACTION_GRANT_USB;
@@ -109,36 +126,120 @@ public class StarPRNT extends CordovaPlugin {
         return true;
     }
 
-    private boolean checkAndRequestPermissions() {
-        ArrayList<String> permissions = new ArrayList<>();
+    private void reportBluetoothPermissionError(CallbackContext callbackContext, SecurityException e) {
+        callbackContext.error("Missing bluetooth permissions: " + e.getMessage());
+    }
 
-        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            permissions.add(Manifest.permission.BLUETOOTH_SCAN);
-            permissions.add(Manifest.permission.BLUETOOTH_CONNECT);
-        } else {
-            // Android API 30 or lower
-            permissions.add(Manifest.permission.BLUETOOTH);
+    private void reportBluetoothPermissionDenied(CallbackContext callbackContext) {
+        callbackContext.error("Necessary bluetooth permissions denied");
+    }
+
+    private boolean isBluetoothPortName(String portName) {
+        return portName != null && portName.startsWith("BT:");
+    }
+
+    /** Runtime Bluetooth permissions are only required on Android 12 (API 31)+. */
+    private boolean needsBluetoothRuntimePermission() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S;
+    }
+
+    private boolean hasBluetoothPermissions() {
+        if (!needsBluetoothRuntimePermission()) {
+            return true;
         }
+        return hasPermissions(getRequiredBluetoothPermissions());
+    }
 
-        String[] permissionsStrings = permissions.toArray(new String[0]);
-        Log.d(TAG, "checking permissions: "+String.join(", ", permissionsStrings));
-        if(!hasPermissions(permissionsStrings)) {
-            Log.d(TAG, "requesting permissions");
-            PermissionHelper.requestPermissions(this, REQUEST_BLUETOOTH_PERMISSIONS, permissionsStrings);
+    /**
+     * Verifies Bluetooth permissions at the point of use (e.g. background thread).
+     * Never shows a prompt — returns false and reports to JS only if missing.
+     */
+    private boolean guardBluetoothPermissions(CallbackContext callbackContext) {
+        if (hasBluetoothPermissions()) {
+            return true;
+        }
+        reportBluetoothPermissionDenied(callbackContext);
+        return false;
+    }
+
+    private boolean usesBluetoothForPersistentMode() {
+        return persistentPortName != null && isBluetoothPortName(persistentPortName);
+    }
+
+    private boolean guardPersistentBluetoothPermissions(CallbackContext callbackContext) {
+        if (!usesBluetoothForPersistentMode()) {
+            return true;
+        }
+        return guardBluetoothPermissions(callbackContext);
+    }
+
+    private boolean requiresBluetoothPermissions(String action, JSONArray args) throws JSONException {
+        if (action.equals("disconnect")) {
             return false;
         }
-        return true;
+        if (action.equals("portDiscovery")) {
+            String iface = args.getString(0);
+            return iface.equals("Bluetooth") || iface.equals("All");
+        }
+        String portName = args.getString(0);
+        if (portName.equals("null")) {
+            return usesBluetoothForPersistentMode();
+        }
+        return isBluetoothPortName(portName);
+    }
+
+    private String[] getRequiredBluetoothPermissions() {
+        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            return new String[] { Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT };
+        }
+        // Android API 30 or lower
+        return new String[] { Manifest.permission.BLUETOOTH };
+    }
+
+    /**
+     * Queues the call and shows the system permission prompt. Caller must verify
+     * {@link #hasBluetoothPermissions()} is false first — never call when already granted.
+     */
+    private void queueBluetoothPermissionRequest(String action, JSONArray args, CallbackContext callbackContext) {
+        synchronized (pendingPermissionCalls) {
+            pendingPermissionCalls.add(new PendingCall(action, args, callbackContext));
+            if (!permissionRequestInFlight) {
+                permissionRequestInFlight = true;
+                Log.d(TAG, "requesting permissions");
+                PermissionHelper.requestPermissions(
+                        this, REQUEST_BLUETOOTH_PERMISSIONS, getRequiredBluetoothPermissions());
+            }
+        }
     }
 
     public void onRequestPermissionResult(int requestCode, String[] permissions, int[] grantResults) throws JSONException {
+        if (requestCode != REQUEST_BLUETOOTH_PERMISSIONS) {
+            return;
+        }
+
+        ArrayList<PendingCall> queuedCalls;
+        synchronized (pendingPermissionCalls) {
+            permissionRequestInFlight = false;
+            queuedCalls = new ArrayList<PendingCall>(pendingPermissionCalls);
+            pendingPermissionCalls.clear();
+        }
+
+        // An empty result means the prompt was interrupted; treat as denied
+        boolean granted = grantResults.length > 0;
         for (int r : grantResults) {
             Log.d(TAG, "Permission results: " + r);
             if (r == PackageManager.PERMISSION_DENIED) {
-                this._callbackContext.error("Necessary bluetooth permissions denied");
-                return;
+                granted = false;
             }
         }
-        execute(_action, _args, _callbackContext);
+
+        for (PendingCall call : queuedCalls) {
+            if (granted) {
+                execute(call.action, call.args, call.callbackContext);
+            } else {
+                reportBluetoothPermissionDenied(call.callbackContext);
+            }
+        }
     }
 
     @Override
@@ -202,8 +303,9 @@ public class StarPRNT extends CordovaPlugin {
         this._action = action;
         this._args = args;
         this._callbackContext = callbackContext;
-        if (!checkAndRequestPermissions()) {
-              return true;
+        if (requiresBluetoothPermissions(action, args) && !hasBluetoothPermissions()) {
+            queueBluetoothPermissionRequest(action, args, callbackContext);
+            return true;
         }
 
         for (UsbDevice device : usbManager.getDeviceList().values()) {
@@ -302,6 +404,9 @@ public class StarPRNT extends CordovaPlugin {
         cordova.getThreadPool()
                 .execute(new Runnable() {
                     public void run() {
+                        if (isBluetoothPortName(_portName) && !guardBluetoothPermissions(_callbackContext)) {
+                            return;
+                        }
 
                         StarIOPort port = null;
                         try {
@@ -336,6 +441,8 @@ public class StarPRNT extends CordovaPlugin {
 
                         } catch (StarIOPortException e) {
                             _callbackContext.error("Failed to connect to printer :" + e.getMessage());
+                        } catch (SecurityException e) {
+                            reportBluetoothPermissionError(_callbackContext, e);
                         } finally {
 
                             if (port != null) {
@@ -370,18 +477,24 @@ public class StarPRNT extends CordovaPlugin {
                             if (_strInterface.equals("LAN")) {
                                 result = getPortDiscovery("LAN");
                             } else if (_strInterface.equals("Bluetooth")) {
-                                result = getPortDiscovery("Bluetooth");
+                                if (guardBluetoothPermissions(_callbackContext)) {
+                                    result = getPortDiscovery("Bluetooth");
+                                } else {
+                                    shouldContinue = false;
+                                }
                             } else if (_strInterface.equals("USB")) {
                                 result = getPortDiscovery("USB");
-                            } else {
+                            } else if (guardBluetoothPermissions(_callbackContext)) {
                                 result = getPortDiscovery("All");
+                            } else {
+                                shouldContinue = false;
                             }
                         } catch (StarIOPortException exception) {
                             _callbackContext.error(exception.getMessage());
                         } catch (SecurityException exception) {
                             shouldContinue = false;
                             Log.d(TAG, "no-perms");
-                            _callbackContext.error("Missing permissions");
+                            reportBluetoothPermissionError(_callbackContext, exception);
                         } catch (JSONException e) {
 
                         } finally {
@@ -489,23 +602,21 @@ public class StarPRNT extends CordovaPlugin {
         return portSettings;
     }
 
-    private void connect(final CallbackContext callbackContext){
-
-        if (starIoExtManager != null) starIoExtManager.connect(new IConnectionCallback() {
+    private void connect(final CallbackContext callbackContext) {
+        if (starIoExtManager == null) {
+            callbackContext.error("Printer manager not initialized");
+            return;
+        }
+        starIoExtManager.connect(new IConnectionCallback() {
             @Override
             public void onConnected(ConnectResult connectResult) {
                 if (connectResult == ConnectResult.Success || connectResult == ConnectResult.AlreadyConnected) {
-
                     PluginResult result = new PluginResult(PluginResult.Status.OK, "Printer Connected");
                     result.setKeepCallback(true);
                     callbackContext.sendPluginResult(result);
-
-                    //callbackContext.success("Printer Connected!");
-
-                }else{
+                } else {
                     callbackContext.error("Error Connecting to the printer");
                 }
-
             }
 
             @Override
@@ -513,31 +624,35 @@ public class StarPRNT extends CordovaPlugin {
                 //Do nothing
             }
         });
-
-
-
     }
-    private void connect(String portName, String portSettings, Boolean hasBarcodeReader, CallbackContext callbackContext) {
 
+    private void connect(String portName, String portSettings, Boolean hasBarcodeReader, CallbackContext callbackContext) {
         final Context context = this.cordova.getActivity();
-        final String _portName = portName;
-        final String _portSettings = portSettings;
         final CallbackContext _callbackContext = callbackContext;
 
-        if(starIoExtManager != null && starIoExtManager.getPort() != null){
+        if (starIoExtManager != null && starIoExtManager.getPort() != null) {
             starIoExtManager.disconnect((ConnectionCallback) null);
         }
-        starIoExtManager = new StarIoExtManager(hasBarcodeReader ? StarIoExtManager.Type.WithBarcodeReader : StarIoExtManager.Type.Standard, _portName, _portSettings, 10000, context);
-        starIoExtManager.setListener(starIoExtManagerListener);
 
-        cordova.getThreadPool()
-                .execute(new Runnable() {
-                    public void run() {
-                        connect(_callbackContext);
-                    }
-                });
-        PluginResult result = new  PluginResult(PluginResult.Status.NO_RESULT);
-        result.setKeepCallback(true); // Keep callback
+        persistentPortName = portName;
+
+        try {
+            starIoExtManager = new StarIoExtManager(
+                    hasBarcodeReader ? StarIoExtManager.Type.WithBarcodeReader : StarIoExtManager.Type.Standard,
+                    portName, portSettings, 10000, context);
+            starIoExtManager.setListener(starIoExtManagerListener);
+        } catch (SecurityException e) {
+            starIoExtManager = null;
+            persistentPortName = null;
+            reportBluetoothPermissionError(callbackContext, e);
+            return;
+        }
+
+        cordova.getThreadPool().execute(new Runnable() {
+            public void run() {
+                connect(_callbackContext);
+            }
+        });
     }
     private void disconnect(CallbackContext callbackContext) {
 
@@ -561,10 +676,12 @@ public class StarPRNT extends CordovaPlugin {
                                 public void onDisconnected() {
                                     sendEvent("printerOffline", null);
                                     starIoExtManager.setListener(null); //remove the listener?
+                                    persistentPortName = null;
                                     _callbackContext.success("Printer Disconnected!");
                                 }
                             });
                         }else{
+                            persistentPortName = null;
                             _callbackContext.success("No printers connected");
                         }
 
@@ -610,7 +727,9 @@ public class StarPRNT extends CordovaPlugin {
                         byte[] commands = builder.getCommands();
 
                         if(_portName == "null"){ // use StarIOExtManager
-                             sendCommand(commands, starIoExtManager.getPort(), _callbackContext);
+                            if (guardPersistentBluetoothPermissions(_callbackContext)) {
+                                sendCommand(commands, starIoExtManager.getPort(), _callbackContext);
+                            }
 
                         }else{//use StarIOPort
                         sendCommand(context, _portName, _portSettings, commands, _callbackContext);
@@ -753,7 +872,9 @@ public class StarPRNT extends CordovaPlugin {
 
 
                         if(_portName == "null"){ // use StarIOExtManager
-                            sendCommand(commands, starIoExtManager.getPort(), _callbackContext);
+                            if (guardPersistentBluetoothPermissions(_callbackContext)) {
+                                sendCommand(commands, starIoExtManager.getPort(), _callbackContext);
+                            }
 
                         }else{//use StarIOPort
                             sendCommand(context, _portName, _portSettings, commands, _callbackContext);
@@ -800,7 +921,9 @@ public class StarPRNT extends CordovaPlugin {
                         byte[] commands = builder.getCommands();
 
                         if(_portName == "null"){ // use StarIOExtManager
-                            sendCommand(commands, starIoExtManager.getPort(), _callbackContext);
+                            if (guardPersistentBluetoothPermissions(_callbackContext)) {
+                                sendCommand(commands, starIoExtManager.getPort(), _callbackContext);
+                            }
 
                         }else{//use StarIOPort
                             sendCommand(context, _portName, _portSettings, commands, _callbackContext);
@@ -833,7 +956,9 @@ public class StarPRNT extends CordovaPlugin {
                         byte[] commands = builder.getCommands();
 
                         if(_portName == "null"){ // use StarIOExtManager
-                            sendCommand(commands, starIoExtManager.getPort(), _callbackContext);
+                            if (guardPersistentBluetoothPermissions(_callbackContext)) {
+                                sendCommand(commands, starIoExtManager.getPort(), _callbackContext);
+                            }
 
                         }else{//use StarIOPort
                             sendCommand(context, _portName, _portSettings, commands, _callbackContext);
@@ -890,7 +1015,9 @@ public class StarPRNT extends CordovaPlugin {
                         byte[] commands = builder.getCommands();
 
                         if(_portName == "null"){ // use StarIOExtManager
-                            sendCommand(commands, starIoExtManager.getPort(), _callbackContext);
+                            if (guardPersistentBluetoothPermissions(_callbackContext)) {
+                                sendCommand(commands, starIoExtManager.getPort(), _callbackContext);
+                            }
 
                         }else{//use StarIOPort
                             sendCommand(context, _portName, _portSettings, commands, _callbackContext);
@@ -922,7 +1049,9 @@ public class StarPRNT extends CordovaPlugin {
                         byte[] commands = builder.getCommands();
 
                         if(_portName == "null"){ // use StarIOExtManager
-                            sendCommand(commands, starIoExtManager.getPort(), _callbackContext);
+                            if (guardPersistentBluetoothPermissions(_callbackContext)) {
+                                sendCommand(commands, starIoExtManager.getPort(), _callbackContext);
+                            }
 
                         }else{//use StarIOPort
                             sendCommand(context, _portName, _portSettings, commands, _callbackContext);
@@ -935,20 +1064,16 @@ public class StarPRNT extends CordovaPlugin {
     }
 
     private boolean sendCommand(byte[] commands, StarIOPort port, CallbackContext callbackContext) {
+        try {
+            Thread.sleep(200);
+        } catch (InterruptedException e) {
+        }
+        if (port == null) {
+            callbackContext.error("Unable to Open Port, Please Connect to the printer before sending commands");
+            return false;
+        }
 
         try {
-			/*
-			 * using StarIOPort3.1.jar (support USB Port) Android OS Version: upper 2.2
-			 */
-            try {
-                Thread.sleep(200);
-            } catch (InterruptedException e) {
-            }
-            if(port == null){ //Not connected or port closed
-                callbackContext.error("Unable to Open Port, Please Connect to the printer before sending commands");
-                return false;
-            }
-
 			/*
 			 * Using Begin / End Checked Block method When sending large amounts of raster data,
 			 * adjust the value in the timeout in the "StarIOPort.getPort" in order to prevent
@@ -959,53 +1084,47 @@ public class StarPRNT extends CordovaPlugin {
 			 * of timeout more longer in "StarIOPort.getPort" method.
 			 * (e.g.) 10000 -> 30000
 			 */
-            StarPrinterStatus status;
-
-            status = port.beginCheckedBlock();
+            StarPrinterStatus status = port.beginCheckedBlock();
 
             if (status.offline) {
-                //sendEvent("printerOffline", null);
                 throw new StarIOPortException("A printer is offline");
-                //callbackContext.error("The printer is offline");
             }
 
             port.writePort(commands, 0, commands.length);
-
-            port.setEndCheckedBlockTimeoutMillis(30000);// Change the timeout time of endCheckedBlock method.
-
+            port.setEndCheckedBlockTimeoutMillis(30000);
             status = port.endCheckedBlock();
 
             if (status.coverOpen) {
                 callbackContext.error("Cover open");
-                //sendEvent("printerCoverOpen", null);
                 return false;
             } else if (status.receiptPaperEmpty) {
                 callbackContext.error("Empty paper");
-                //sendEvent("printerPaperEmpty", null);
                 return false;
             } else if (status.offline) {
                 callbackContext.error("Printer offline");
-                //sendEvent("printerOffline", null);
                 return false;
             }
             callbackContext.success("Success!");
-
+            return true;
         } catch (StarIOPortException e) {
-            //sendEvent("printerImpossible", e.getMessage());
             callbackContext.error(e.getMessage());
             return false;
-        } finally {
-            return true;
+        } catch (SecurityException e) {
+            reportBluetoothPermissionError(callbackContext, e);
+            return false;
         }
     }
     private boolean sendCommand(Context context, String portName, String portSettings, byte[] commands, CallbackContext callbackContext) {
+        if (isBluetoothPortName(portName) && !guardBluetoothPermissions(callbackContext)) {
+            return false;
+        }
 
         StarIOPort port = null;
         try {
 			/*
 			 * using StarIOPort3.1.jar (support USB Port) Android OS Version: upper 2.2
 			 */
-                port = StarIOPort.getPort(portName, portSettings, 10000, context);
+            port = StarIOPort.getPort(portName, portSettings, 10000, context);
             try {
                 Thread.sleep(100);
             } catch (InterruptedException e) {
@@ -1024,15 +1143,12 @@ public class StarPRNT extends CordovaPlugin {
             StarPrinterStatus status = port.beginCheckedBlock();
 
             if (status.offline) {
-                //throw new StarIOPortException("A printer is offline");
                 callbackContext.error("The printer is offline");
                 return false;
             }
 
             port.writePort(commands, 0, commands.length);
-
-
-            port.setEndCheckedBlockTimeoutMillis(30000);// Change the timeout time of endCheckedBlock method.
+            port.setEndCheckedBlockTimeoutMillis(30000);
             status = port.endCheckedBlock();
 
             if (status.coverOpen) {
@@ -1046,9 +1162,13 @@ public class StarPRNT extends CordovaPlugin {
                 return false;
             }
             callbackContext.success("Success!");
-
+            return true;
         } catch (StarIOPortException e) {
             callbackContext.error(e.getMessage());
+            return false;
+        } catch (SecurityException e) {
+            reportBluetoothPermissionError(callbackContext, e);
+            return false;
         } finally {
             if (port != null) {
                 try {
@@ -1056,7 +1176,6 @@ public class StarPRNT extends CordovaPlugin {
                 } catch (StarIOPortException e) {
                 }
             }
-            return true;
         }
     }
 
