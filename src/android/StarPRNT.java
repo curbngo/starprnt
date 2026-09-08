@@ -570,6 +570,10 @@ public class StarPRNT extends CordovaPlugin {
                 }
             }
 
+            if (port.has("modelName")) {
+                port.put("emulation", getEmulationFromModel(port.getString("modelName")));
+            }
+
             arrayPorts.put(port);
         }
 
@@ -587,6 +591,16 @@ public class StarPRNT extends CordovaPlugin {
         else if (emulation.equals("StarDotImpact")) return Emulation.StarDotImpact;
         else return Emulation.StarLine;
     };
+
+    private String getEmulationFromModel(String modelName){
+        if (modelName == null) return "StarGraphic";
+        String m = modelName.toUpperCase();
+        if (m.contains("654") || m.contains("650") || m.contains("700II") || m.contains("800II") || m.contains("FVP10"))
+            return "StarLine";
+        if (m.contains("TSP100IV") || m.contains("TSP143IV"))
+            return "StarPRNT";
+        return "StarGraphic";
+    }
 
     private String getPortSettingsOption(String portName, String emulation) { // generate the portsettings depending on the emulation type
 
@@ -1200,7 +1214,11 @@ public class StarPRNT extends CordovaPlugin {
                 else if (command.has("appendUnitFeed")) builder.appendUnitFeed(command.getInt("appendUnitFeed"));
                 else if (command.has("appendLineSpace")) builder.appendLineSpace(command.getInt("appendLineSpace"));
                 else if (command.has("appendFontStyle")) builder.appendFontStyle(getFontStyle(command.getString("appendFontStyle")));
-                else if (command.has("appendCutPaper")) builder.appendCutPaper(getCutPaperAction(command.getString("appendCutPaper")));
+                else if (command.has("appendCutPaper")) {
+                    Object cutPaper = command.get("appendCutPaper");
+                    String cutPaperAction = cutPaper instanceof String ? (String) cutPaper : "PartialCutWithFeed";
+                    builder.appendCutPaper(getCutPaperAction(cutPaperAction));
+                }
                 else if (command.has("openCashDrawer")) builder.appendPeripheral(getPeripheralChannel(command.getInt("openCashDrawer")));
                 else if (command.has("appendBlackMark")) builder.appendBlackMark(getBlackMarkType(command.getString("appendBlackMark")));
                 else if (command.has("appendBytes")) {

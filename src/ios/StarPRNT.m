@@ -1169,6 +1169,15 @@ static NSString *dataCallbackId = nil;
     else if ([emulation isEqualToString:@"StarDotImpact"]) return StarIoExtEmulationStarDotImpact;
     else return StarIoExtEmulationStarLine;
 }
+-(NSString *)getEmulationFromModel:(NSString *)modelName {
+    if (modelName == nil || modelName == (id)[NSNull null]) return @"StarGraphic";
+    NSString *m = [modelName uppercaseString];
+    if ([m rangeOfString:@"654"].location != NSNotFound || [m rangeOfString:@"650"].location != NSNotFound || [m rangeOfString:@"700II"].location != NSNotFound || [m rangeOfString:@"800II"].location != NSNotFound || [m rangeOfString:@"FVP10"].location != NSNotFound)
+        return @"StarLine";
+    if ([m rangeOfString:@"TSP100IV"].location != NSNotFound || [m rangeOfString:@"TSP143IV"].location != NSNotFound)
+        return @"StarPRNT";
+    return @"StarGraphic";
+}
 - (UIImage *)imageWithString:(NSString *)string font:(UIFont *)font width:(CGFloat)width {
     NSDictionary *attributeDic = @{NSFontAttributeName:font};
     
@@ -1213,6 +1222,7 @@ static NSString *dataCallbackId = nil;
     [dict setObject:[portInfo portName] forKey:@"portName"];
     [dict setObject:[portInfo macAddress] forKey:@"macAddress"];
     [dict setObject:[portInfo modelName] forKey:@"modelName"];
+    [dict setObject:[self getEmulationFromModel:[portInfo modelName]] forKey:@"emulation"];
     return dict;
 }
 - (NSMutableDictionary*)portStatusToDictionary:(StarPrinterStatus_2)status :(NSDictionary*)firmwareInformation {
