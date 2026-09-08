@@ -33,7 +33,7 @@ static NSString *dataCallbackId = nil;
             emulation = [command.arguments objectAtIndex:1];
             hasBarcodeReader = [command.arguments objectAtIndex:2];
         }
-        NSString *portSettings = [self getPortSettingsOption:emulation];
+        NSString *portSettings = [self getPortSettingsOption:emulation portName:printerPort];
         
         if (printerPort != nil && printerPort != (id)[NSNull null]){
             if ([hasBarcodeReader isEqual:@(YES)]) {
@@ -86,7 +86,7 @@ static NSString *dataCallbackId = nil;
             portName = [command.arguments objectAtIndex:0];
             emulation = [command.arguments objectAtIndex:1];
         }
-        NSString *portSettings = [self getPortSettingsOption:emulation];
+        NSString *portSettings = [self getPortSettingsOption:emulation portName:portName];
         @try {
             
             port = [SMPort getPort:portName :portSettings :10000];     // 10000mS!!!
@@ -141,7 +141,7 @@ static NSString *dataCallbackId = nil;
             printObj = [command.arguments objectAtIndex:2];
         };
         
-        NSString *portSettings = [self getPortSettingsOption:emulation];
+        NSString *portSettings = [self getPortSettingsOption:emulation portName:portName];
         NSString *text = [printObj valueForKey:@"text"];
         BOOL cutReceipt = ([printObj valueForKey:@"cutReceipt"]) ? YES : NO;
         BOOL openCashDrawer = ([printObj valueForKey:@"openCashDrawer"]) ? YES : NO;
@@ -196,7 +196,7 @@ static NSString *dataCallbackId = nil;
             printObj = [command.arguments objectAtIndex:2];
         };
         
-        NSString *portSettings = [self getPortSettingsOption:emulation];        
+        NSString *portSettings = [self getPortSettingsOption:emulation portName:portName];        
         NSString *base64Image = [printObj valueForKey:@"base64Image"];        
         CGFloat width = ([printObj valueForKey:@"width"]) ? [[printObj valueForKey:@"width"] floatValue] : 576;
         BOOL cutReceipt = ([printObj valueForKey:@"cutReceipt"]) ? YES : NO;
@@ -253,7 +253,7 @@ static NSString *dataCallbackId = nil;
             printObj = [command.arguments objectAtIndex:2];
         };
         
-        NSString *portSettings = [self getPortSettingsOption:emulation];
+        NSString *portSettings = [self getPortSettingsOption:emulation portName:portName];
         NSString *text = [printObj valueForKey:@"text"];
         NSInteger fontSize = ([printObj valueForKey:@"fontSize"]) ? [[printObj valueForKey:@"fontSize"] intValue] : 25;
         CGFloat paperWidth = ([printObj valueForKey:@"paperWidth"]) ? [[printObj valueForKey:@"paperWidth"] floatValue] : 576;
@@ -312,7 +312,7 @@ static NSString *dataCallbackId = nil;
             printObj = [command.arguments objectAtIndex:2];
         };
         
-        NSString *portSettings = [self getPortSettingsOption:emulation];
+        NSString *portSettings = [self getPortSettingsOption:emulation portName:portName];
         NSString *uri = [printObj valueForKey:@"uri"];
         CGFloat paperWidth = ([printObj valueForKey:@"paperWidth"]) ? [[printObj valueForKey:@"paperWidth"] floatValue] : 576;
         BOOL cutReceipt = ([printObj valueForKey:@"cutReceipt"]) ? YES : NO;
@@ -369,7 +369,7 @@ static NSString *dataCallbackId = nil;
             printCommands = [command.arguments objectAtIndex:2];
         };
         
-        NSString *portSettings = [self getPortSettingsOption:emulation];
+        NSString *portSettings = [self getPortSettingsOption:emulation portName:portName];
 
         StarIoExtEmulation Emulation = [self getEmulation:emulation];
         
@@ -455,7 +455,7 @@ static NSString *dataCallbackId = nil;
             emulation = [command.arguments objectAtIndex:1];
         };
         
-        NSString *portSettings = [self getPortSettingsOption:emulation];
+        NSString *portSettings = [self getPortSettingsOption:emulation portName:portName];
         StarIoExtEmulation Emulation = [self getEmulation:emulation];
         
         ISCBBuilder *builder = [StarIoExt createCommandBuilder:Emulation];
@@ -1147,13 +1147,16 @@ static NSString *dataCallbackId = nil;
     }];
 }
 -(NSString *)getPortSettingsOption:(NSString *)emulation {
+    return [self getPortSettingsOption:emulation portName:nil];
+}
+-(NSString *)getPortSettingsOption:(NSString *)emulation portName:(NSString *)portName {
     NSString *portSettings = [NSString string];
     
     if([emulation isEqualToString:@"EscPosMobile"]){
         portSettings = [@"mini" stringByAppendingString:portSettings];
     }else if([emulation isEqualToString:@"EscPos"]){
         portSettings = [@"escpos" stringByAppendingString:portSettings];
-    }else if([emulation isEqualToString:@"StarPRNT"] || [emulation isEqualToString:@"StarPRNTL"]){
+    }else if(([emulation isEqualToString:@"StarPRNT"] || [emulation isEqualToString:@"StarPRNTL"]) && portName != nil && [portName.uppercaseString hasPrefix:@"BT:"]){
         portSettings = [@"Portable;l" stringByAppendingString:portSettings];
     }
     return portSettings;
@@ -1174,7 +1177,7 @@ static NSString *dataCallbackId = nil;
     NSString *m = [modelName uppercaseString];
     if ([m rangeOfString:@"654"].location != NSNotFound || [m rangeOfString:@"650"].location != NSNotFound || [m rangeOfString:@"700II"].location != NSNotFound || [m rangeOfString:@"800II"].location != NSNotFound || [m rangeOfString:@"FVP10"].location != NSNotFound)
         return @"StarLine";
-    if ([m rangeOfString:@"TSP100IV"].location != NSNotFound || [m rangeOfString:@"TSP143IV"].location != NSNotFound)
+    if ([m rangeOfString:@"TSP100IV"].location != NSNotFound || [m rangeOfString:@"TSP143IV"].location != NSNotFound || [m rangeOfString:@"MCL21"].location != NSNotFound || [m rangeOfString:@"MC-LABEL"].location != NSNotFound || [m rangeOfString:@"MCLABEL"].location != NSNotFound || [m rangeOfString:@"LABEL2"].location != NSNotFound)
         return @"StarPRNT";
     return @"StarGraphic";
 }

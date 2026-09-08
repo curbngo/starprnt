@@ -597,7 +597,7 @@ public class StarPRNT extends CordovaPlugin {
         String m = modelName.toUpperCase();
         if (m.contains("654") || m.contains("650") || m.contains("700II") || m.contains("800II") || m.contains("FVP10"))
             return "StarLine";
-        if (m.contains("TSP100IV") || m.contains("TSP143IV"))
+        if (m.contains("TSP100IV") || m.contains("TSP143IV") || m.contains("MCL21") || m.contains("MC-LABEL") || m.contains("MCLABEL") || m.contains("LABEL2"))
             return "StarPRNT";
         return "StarGraphic";
     }
@@ -608,11 +608,10 @@ public class StarPRNT extends CordovaPlugin {
 
         if (emulation.equals("EscPosMobile")) portSettings += "mini";
         else if (emulation.equals("EscPos")) portSettings += "escpos";
-        else //StarLine, StarGraphic, StarDotImpact
-            if (emulation.equals("StarPRNT") || emulation.equals("StarPRNTL")) {
-                portSettings += "Portable";
-                portSettings += ";l"; //retry on
-            } else portSettings += "";
+        else if ((emulation.equals("StarPRNT") || emulation.equals("StarPRNTL")) && portName != null && portName.toUpperCase().startsWith("BT:")) {
+            portSettings += "Portable";
+            portSettings += ";l";
+        } else portSettings += "";
         return portSettings;
     }
 
